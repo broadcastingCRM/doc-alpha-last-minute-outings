@@ -41,8 +41,48 @@ Copie `.env.example` para `.env.local` e preencha:
 | `NEXT_PUBLIC_SUPABASE_URL` | client | URL do projeto Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client | Chave anônima (pública) do Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | server | Chave de serviço — nunca expor ao cliente |
+| `DIAGNOSTIC_TOKEN` | server | Bearer token da rota `GET /api/health/supabase` (temporária) |
 
 Variáveis com prefixo `NEXT_PUBLIC_` vão para o bundle do browser — nunca coloque segredos nelas.
+
+## Mapa de ambientes
+
+Um único projeto na Vercel; dois projetos Supabase (`docalpha-prod` e `docalpha-dev`), ligados por escopo de variável de ambiente:
+
+| Ambiente Vercel | Quando é usado | Banco |
+|---|---|---|
+| Production | branch `main` | `docalpha-prod` |
+| Preview | demais branches e PRs | `docalpha-dev` |
+| Development | `vercel dev` / `.env.local` | `docalpha-dev` |
+
+Project refs: `docalpha-prod` → `<preencher>`, `docalpha-dev` → `<preencher>` (coluna "Project ID"/ref no dashboard do Supabase, também embutido no host `https://<ref>.supabase.co`).
+
+**A integração nativa Supabase ↔ Vercel não é usada** — ela não permite dois bancos no mesmo projeto Vercel e uma ressincronização sobrescreveria a configuração manual. Mantenha-a desconectada.
+
+## Migrations
+
+Migrations versionadas em `supabase/migrations/`, aplicadas via Supabase CLI (instalado como devDependency — não há ambiente local com Docker):
+
+```bash
+npx supabase link --project-ref <ref-do-docalpha-dev>   # exige SUPABASE_ACCESS_TOKEN no ambiente
+npx supabase migration new <nome>
+npx supabase db push                                   # aplica no banco linkado (dev)
+npx supabase gen types typescript --linked > lib/database.types.ts
+```
+
+Regras:
+
+- **Nunca alterar o esquema pelo Table Editor do painel** — isso faz banco e migrations divergirem. Se houver divergência, `npx supabase db pull` gera a migration do estado remoto.
+- **Produção não recebe `db push` manual.** O workflow `.github/workflows/supabase-migrations.yml` aplica as migrations pendentes no `docalpha-prod` a cada push em `main` que altere `supabase/migrations/` (ou via `workflow_dispatch`).
+- Verificação de "aplica do zero": projeto Supabase descartável ou reset do `docalpha-dev` — nunca do `docalpha-prod`.
+
+### Secrets do repositório (GitHub → Settings → Secrets and variables → Actions)
+
+| Secret | Valor |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | Access token da conta Supabase (supabase.com/dashboard/account/tokens) |
+| `SUPABASE_PROJECT_ID` | Project ref do `docalpha-prod` |
+| `SUPABASE_DB_PASSWORD` | Senha do banco do `docalpha-prod` |
 
 ## Deploy
 
